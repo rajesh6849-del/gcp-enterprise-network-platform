@@ -13,4 +13,8 @@ resource "google_compute_firewall" "this" {
     protocol = var.protocol
     ports    = var.ports
   }
+
+  log_config {
+    metadata = "INCLUDE_ALL_METADATA"
+  }
 }
