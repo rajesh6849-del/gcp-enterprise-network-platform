@@ -130,6 +130,31 @@ Using a custom-mode VPC provides better control over network design compared to 
 
 ---
 
+
+## Shared VPC Architecture
+
+This project includes a reusable Shared VPC module that models an enterprise host-project and service-project design.
+
+The Shared VPC host project owns the central network infrastructure, while service projects consume the shared network.
+
+```text
+Shared VPC Host Project
+│
+├── Shared VPC
+├── Subnets
+├── Routes
+├── Firewall controls
+├── Cloud Router
+└── Cloud NAT
+
+Service Project A
+└── Application workloads
+
+Service Project B
+└── Data workloads
+ 
+ ---
+ 
 ## Subnet Module
 
 The subnet module creates regional subnets inside the VPC.
