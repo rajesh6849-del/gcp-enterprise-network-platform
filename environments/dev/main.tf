@@ -60,3 +60,25 @@ module "nat_us_central1" {
   region      = "us-central1"
   router_name = module.router_us_central1.router_name
 }
+module "private_dns" {
+  source = "../../modules/dns"
+
+  project_id        = var.project_id
+  zone_name         = "dev-internal-zone"
+  dns_name          = "dev.internal."
+  network_self_link = module.vpc.network_self_link
+
+  records = {
+    app = {
+      type    = "A"
+      ttl     = 300
+      rrdatas = ["10.10.0.10"]
+    }
+
+    api = {
+      type    = "A"
+      ttl     = 300
+      rrdatas = ["10.20.0.10"]
+    }
+  }
+}
