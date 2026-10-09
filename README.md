@@ -2,68 +2,69 @@
 
 ## Overview
 
-This project demonstrates an enterprise-style Google Cloud Platform networking architecture built using Terraform.
+This project demonstrates an enterprise-style Google Cloud Platform networking architecture built with Terraform.
 
-The goal of this project is to build a reusable, modular, and secure GCP network foundation while demonstrating practical skills in:
+The goal is to create a reusable, modular, secure, and observable network foundation that reflects common enterprise cloud networking patterns.
 
-- Google Cloud Platform
-- GCP Networking
-- Terraform
-- Infrastructure as Code
-- Git and GitHub
-- VPC design
-- Subnet design
-- Firewall configuration
+The project currently demonstrates:
+
+- Custom-mode VPC
+- Regional subnets
+- Firewall rules
 - Cloud Router
 - Cloud NAT
-- Modular Terraform architecture
+- VPC Flow Logs
+- Firewall logging
+- Cloud NAT logging
+- Private Cloud DNS
+- HA VPN
+- BGP
+- Shared VPC architecture
+- Reusable Terraform modules
+- Git feature-branch workflow
+- Pull Request based development
 
-This repository is designed as a hands-on portfolio project for cloud and network engineering.
+This repository is intended as a hands-on portfolio project for GCP networking, Terraform, cloud infrastructure, and enterprise network engineering.
 
 ---
 
-## Architecture
+## High-Level Architecture
 
 ```text
-                         GCP Project
-                             |
-                             |
-                    enterprise-dev-vpc
-                             |
-              +--------------+--------------+
-              |                             |
-              |                             |
-        us-central1                    us-east1
-              |                             |
-              |                             |
-    10.10.0.0/24 subnet            10.20.0.0/24 subnet
+                         GCP Environment
+                              |
+                              |
+                     enterprise-dev-vpc
+                              |
+              +---------------+---------------+
+              |                               |
+        us-central1                      us-east1
+              |                               |
+     10.10.0.0/24 subnet             10.20.0.0/24 subnet
+              |                               |
+       VPC Flow Logs                   VPC Flow Logs
               |
               |
-        Cloud Router
+        Firewall Rules
+              |
+        Firewall Logging
               |
               |
-          Cloud NAT
-
-
-        Firewall Controls
-              |
-        Internal Traffic
+         Cloud Router
+          ASN 64514
+          /       \
+         /         \
+   Cloud NAT      HA VPN
+      |             |
+ NAT Logging      VPN Tunnels
+                    |
+                    |
+                BGP Sessions
+                    |
+                    |
+             External VPN Peer
+                ASN 65010
 ```
-
----
-
-## Current Architecture
-
-The current development environment contains:
-
-- One custom-mode GCP VPC
-- One subnet in `us-central1`
-- One subnet in `us-east1`
-- Reusable firewall rules
-- One Cloud Router in `us-central1`
-- One Cloud NAT configuration
-- Reusable Terraform modules
-- Separate development environment configuration
 
 ---
 
@@ -94,18 +95,38 @@ gcp-enterprise-network-platform/
 │   │   ├── variables.tf
 │   │   └── outputs.tf
 │   │
-│   └── nat/
+│   ├── nat/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   │
+│   ├── dns/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   │
+│   ├── ha-vpn/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   │
+│   └── shared-vpc/
 │       ├── main.tf
 │       ├── variables.tf
 │       └── outputs.tf
 │
 ├── environments/
-│   │
 │   └── dev/
 │       ├── main.tf
 │       ├── providers.tf
 │       ├── variables.tf
 │       └── .terraform.lock.hcl
+│
+├── examples/
+│   └── shared-vpc/
+│       ├── main.tf
+│       ├── variables.tf
+│       └── terraform.tfvars.example
 │
 ├── architecture/
 ├── .gitignore
@@ -119,84 +140,115 @@ gcp-enterprise-network-platform/
 
 The VPC module creates a custom-mode Google Cloud VPC.
 
-Key configuration:
+Key characteristics:
 
 - Automatic subnet creation is disabled
-- Dynamic routing mode is configured as `GLOBAL`
-- Subnets are explicitly created and managed
-- CIDR ranges are controlled through Terraform
+- Dynamic routing mode is set to `GLOBAL`
+- Subnets are explicitly managed
+- CIDR allocation is controlled through Terraform
 
-Using a custom-mode VPC provides better control over network design compared to automatically created subnetworks.
+Example:
+
+```hcl
+resource "google_compute_network" "this" {
+  name                    = var.network_name
+  project                 = var.project_id
+  auto_create_subnetworks = false
+  routing_mode            = var.routing_mode
+}
+```
+
+Using a custom-mode VPC provides better control over subnet placement, CIDR allocation, segmentation, and enterprise network design.
 
 ---
 
+## Subnet Architecture
 
-## Shared VPC Architecture
+The project currently defines two regional subnets.
 
-This project includes a reusable Shared VPC module that models an enterprise host-project and service-project design.
-
-The Shared VPC host project owns the central network infrastructure, while service projects consume the shared network.
-
-```text
-Shared VPC Host Project
-│
-├── Shared VPC
-├── Subnets
-├── Routes
-├── Firewall controls
-├── Cloud Router
-└── Cloud NAT
-
-Service Project A
-└── Application workloads
-
-Service Project B
-└── Data workloads
- 
- ---
- 
-## Subnet Module
-
-The subnet module creates regional subnets inside the VPC.
-
-Current development subnets:
-
-| Region | Subnet Name | CIDR |
+| Region | Subnet | CIDR |
 |---|---|---|
 | us-central1 | dev-us-central1-subnet | 10.10.0.0/24 |
 | us-east1 | dev-us-east1-subnet | 10.20.0.0/24 |
 
-Private Google Access is enabled on the subnets.
+The VPC is global, while subnets are regional.
 
-The VPC itself is global, while GCP subnets are regional resources.
+Private Google Access is enabled.
+
+VPC Flow Logs are also enabled to provide network traffic visibility.
+
+Example flow-log configuration:
+
+```hcl
+log_config {
+  aggregation_interval = "INTERVAL_5_SEC"
+  flow_sampling        = 0.5
+  metadata             = "INCLUDE_ALL_METADATA"
+}
+```
 
 ---
 
-## Firewall Module
+## Firewall Architecture
 
 The firewall module creates reusable GCP firewall rules.
 
-The current development configuration allows selected internal TCP communication.
-
-Example permitted ports include:
-
-- TCP 22
-- TCP 443
-
-The module supports configurable:
+The current development environment supports configurable:
 
 - Source CIDR ranges
 - Protocols
 - Ports
-- Priorities
+- Rule priority
+- Direction
 - Network tags
-- Firewall direction
 
-Future versions of this project will implement more restrictive least-privilege firewall policies.
+Firewall rule logging is enabled.
+
+Example:
+
+```hcl
+log_config {
+  metadata = "INCLUDE_ALL_METADATA"
+}
+```
+
+This provides visibility into traffic that matches firewall rules and helps with troubleshooting.
 
 ---
 
-## Cloud Router Module
+## Network Observability
+
+The project includes multiple logging layers.
+
+```text
+VPC Flow Logs
+      +
+Firewall Logs
+      +
+Cloud NAT Logs
+      +
+Cloud DNS Query Logs
+```
+
+These help answer questions such as:
+
+```text
+Did the packet leave the source subnet?
+
+Did it match the expected firewall rule?
+
+Was source NAT applied?
+
+Was the DNS query received?
+
+What destination was resolved?
+
+Did the packet reach the expected network path?
+```
+
+---
+
+## Cloud Router
 
 The Cloud Router module creates a regional Cloud Router.
 
@@ -204,27 +256,27 @@ Current configuration:
 
 ```text
 Region: us-central1
-BGP ASN: 64514
+ASN: 64514
 ```
 
 Cloud Router provides dynamic routing capabilities for services such as:
 
-- Cloud NAT
 - HA VPN
 - Cloud Interconnect
-- Hybrid cloud networking
+- Hybrid cloud connectivity
+- Cloud NAT association
 
-Cloud Router operates as a routing control-plane component and does not directly forward application packets.
+Cloud Router is a control-plane component.
+
+It exchanges routes using BGP but does not directly forward application packets.
 
 ---
 
-## Cloud NAT Module
+## Cloud NAT
 
-Cloud NAT is attached to the Cloud Router.
+Cloud NAT provides outbound internet access for workloads that do not have public IP addresses.
 
-Cloud NAT allows private workloads to initiate outbound internet connections without requiring public IP addresses on the workloads.
-
-Current configuration uses:
+Current configuration:
 
 ```text
 NAT IP Allocation: AUTO_ONLY
@@ -248,31 +300,242 @@ Cloud NAT
 Public Internet
 ```
 
+Cloud NAT logging is enabled:
+
+```hcl
+log_config {
+  enable = true
+  filter = "ALL"
+}
+```
+
+This improves visibility into translated connections and NAT-related failures.
+
 ---
 
-## Terraform Dependency Flow
+## Private Cloud DNS
 
-Terraform automatically understands dependencies between modules through resource references.
+The project includes a reusable private Cloud DNS module.
 
-The current dependency flow is:
+The development environment uses the private zone:
 
 ```text
-Development Environment
-          |
-          v
-       VPC Module
-          |
-          +-------------------+
-          |                   |
-          v                   v
-    Subnet Modules       Firewall Module
-          |
-          v
-     Cloud Router
-          |
-          v
-       Cloud NAT
+dev.internal.
 ```
+
+Example records:
+
+```text
+app.dev.internal  -> 10.10.0.10
+api.dev.internal  -> 10.20.0.10
+```
+
+The private zone is associated with the VPC.
+
+Simplified DNS resolution flow:
+
+```text
+Application
+    |
+    | DNS query
+    v
+Cloud DNS Private Zone
+    |
+    | returns private IP
+    v
+VPC Routing
+    |
+    v
+Destination Workload
+```
+
+DNS query logging is also enabled using a DNS policy.
+
+This helps troubleshoot private name-resolution problems.
+
+---
+
+## HA VPN Architecture
+
+The project includes an HA VPN design for hybrid connectivity.
+
+The architecture models:
+
+```text
+GCP VPC
+   |
+Cloud Router
+ASN 64514
+   |
+   +-------------------+
+   |                   |
+BGP Session 0       BGP Session 1
+   |                   |
+Tunnel 0            Tunnel 1
+   |                   |
+HA VPN Gateway
+   |                   |
+   +-------------------+
+            |
+    External VPN Gateway
+            |
+      On-Premises Peer
+         ASN 65010
+```
+
+Two tunnels are modeled for redundancy.
+
+---
+
+## BGP Design
+
+The project uses BGP for dynamic route exchange.
+
+Current example configuration:
+
+```text
+GCP ASN: 64514
+Peer ASN: 65010
+```
+
+BGP link-local addressing:
+
+```text
+Tunnel 0
+GCP:  169.254.0.1
+Peer: 169.254.0.2
+
+Tunnel 1
+GCP:  169.254.0.5
+Peer: 169.254.0.6
+```
+
+The important distinction is:
+
+```text
+VPN Tunnel
+=
+Encrypted connectivity
+
+BGP
+=
+Dynamic route exchange
+```
+
+A VPN tunnel can be operational while the BGP session is down.
+
+That means:
+
+```text
+Tunnel UP
+does not automatically mean
+Routing works
+```
+
+---
+
+## Hybrid Connectivity Troubleshooting
+
+A safe troubleshooting sequence is:
+
+```text
+1. Check VPN tunnel status
+        |
+        v
+2. Check BGP session status
+        |
+        v
+3. Check learned routes
+        |
+        v
+4. Check advertised routes
+        |
+        v
+5. Check VPC route selection
+        |
+        v
+6. Check firewall rules
+        |
+        v
+7. Check return path
+        |
+        v
+8. Review flow and NAT logs
+```
+
+This helps avoid jumping to conclusions during hybrid-network incidents.
+
+---
+
+## Shared VPC Architecture
+
+The project includes a reusable Shared VPC module.
+
+The design separates central network ownership from workload ownership.
+
+```text
+Shared VPC Host Project
+│
+├── Shared VPC
+├── Subnets
+├── Routes
+├── Firewall Controls
+├── Cloud Router
+└── Cloud NAT
+
+Service Project A
+└── Application Workloads
+
+Service Project B
+└── Data Workloads
+```
+
+The host project owns centralized network infrastructure.
+
+Service projects consume the shared network while hosting application or platform workloads.
+
+This supports:
+
+- Centralized network governance
+- Separation of responsibilities
+- Reduced network-management duplication
+- Standardized subnet allocation
+- Centralized firewall and routing controls
+- Independent application ownership
+
+---
+
+## Shared VPC Example
+
+A safe example configuration is included under:
+
+```text
+examples/shared-vpc/
+```
+
+The example demonstrates how a Shared VPC host project can attach multiple service projects.
+
+Example structure:
+
+```text
+Host Project
+      |
+      v
+Shared VPC
+   /       \
+  /         \
+App Project Data Project
+```
+
+The example uses placeholder project IDs.
+
+It is not intended to be directly applied without real separate GCP projects.
+
+---
+
+## Terraform Dependency Model
+
+Terraform automatically determines creation order through references.
 
 For example:
 
@@ -280,7 +543,7 @@ For example:
 network_self_link = module.vpc.network_self_link
 ```
 
-This reference tells Terraform that the subnet depends on the VPC.
+creates a dependency between the subnet and VPC.
 
 Similarly:
 
@@ -290,62 +553,67 @@ router_name = module.router_us_central1.router_name
 
 creates a dependency between Cloud NAT and Cloud Router.
 
+The current dependency model is approximately:
+
+```text
+Development Environment
+          |
+          v
+         VPC
+          |
+    +-----+-----------------------+
+    |             |               |
+    v             v               v
+ Subnets       Firewall          DNS
+    |
+    v
+Cloud Router
+    |
+ +--+----------------+
+ |                   |
+ v                   v
+NAT                HA VPN
+                      |
+                      v
+                  BGP Peers
+```
+
 ---
 
 ## Terraform Workflow
 
-The Terraform workflow used for this project is:
+The project follows a standard Infrastructure as Code workflow:
 
 ```text
-Write Terraform Code
-        |
-        v
+Write Terraform
+      |
+      v
 terraform fmt
-        |
-        v
+      |
+      v
 terraform init
-        |
-        v
+      |
+      v
 terraform validate
-        |
-        v
+      |
+      v
 terraform plan
-        |
-        v
+      |
+      v
 Review Changes
-        |
-        v
+      |
+      v
 terraform apply
 ```
 
 ---
 
-## Terraform Validation
+## Validation Commands
 
-The project is formatted and validated using:
+Format Terraform:
 
 ```bash
 terraform fmt -recursive
-```
-
-```bash
-terraform init
-```
-
-```bash
-terraform validate
-```
-
-A successful validation confirms that the Terraform configuration is syntactically valid and that module references are correctly configured.
-
----
-
-## Deployment
-
-To deploy the development environment:
-
-```bash
-cd environments/dev
 ```
 
 Initialize Terraform:
@@ -354,81 +622,89 @@ Initialize Terraform:
 terraform init
 ```
 
-Validate the configuration:
+Validate configuration:
 
 ```bash
 terraform validate
 ```
 
-Review the proposed infrastructure changes:
+Review planned infrastructure changes:
 
 ```bash
 terraform plan
 ```
 
-Deploy the resources:
+Deploy when the target environment is ready:
 
 ```bash
 terraform apply
 ```
 
-A valid GCP project, required Google Cloud APIs, billing, and authenticated credentials are required before deployment.
-
 ---
 
 ## Git Workflow
 
-Development is performed using feature branches instead of working directly on the `main` branch.
+Development is performed using feature branches rather than directly modifying `main`.
 
-Example workflow:
+Example:
 
 ```text
 main
  |
- |
  +---- feature/base-network
-              |
-              +---- Terraform development
-              |
-              +---- Validation
-              |
-              +---- Commit
-              |
-              +---- Push
-              |
-              +---- Pull Request
-              |
-              v
-             main
+ |
+ +---- feature/network-observability
+ |
+ +---- feature/cloud-dns
+ |
+ +---- feature/ha-vpn
+ |
+ +---- feature/shared-vpc
+```
+
+Each feature follows:
+
+```text
+Create Branch
+     |
+     v
+Develop
+     |
+     v
+Validate
+     |
+     v
+Commit
+     |
+     v
+Push
+     |
+     v
+Pull Request
+     |
+     v
+Review
+     |
+     v
+Merge to main
 ```
 
 Example commands:
 
 ```bash
-git switch -c feature/base-network
-```
-
-```bash
+git switch -c feature/example
 git add .
+git commit -m "feat: add example feature"
+git push -u origin feature/example
 ```
-
-```bash
-git commit -m "feat: build base GCP network platform"
-```
-
-```bash
-git push -u origin feature/base-network
-```
-
-Changes are reviewed through a GitHub Pull Request before merging into `main`.
 
 ---
 
 ## Security Practices
 
-The repository avoids committing sensitive Terraform and environment files.
+Sensitive and machine-specific files are excluded from source control.
 
-The `.gitignore` configuration excludes files such as:
+The repository ignores files such as:
 
 ```text
 .terraform/
@@ -438,7 +714,9 @@ terraform.tfvars
 .DS_Store
 ```
 
-Terraform state files and local variable files should not be committed to a public repository.
+Terraform state and sensitive local variable files should not be committed to a public repository.
+
+Secrets such as VPN pre-shared keys are defined through sensitive variables and should be provided outside source control.
 
 ---
 
@@ -446,19 +724,28 @@ Terraform state files and local variable files should not be committed to a publ
 
 Completed:
 
-- Custom-mode VPC module
-- Regional subnet module
+- Custom-mode VPC
+- Regional subnets
 - Firewall module
-- Cloud Router module
-- Cloud NAT module
-- Development environment
-- Terraform initialization
+- Cloud Router
+- Cloud NAT
+- VPC Flow Logs
+- Firewall logging
+- Cloud NAT logging
+- Private Cloud DNS
+- DNS query logging
+- HA VPN
+- Redundant VPN tunnels
+- BGP peers
+- Shared VPC module
+- Shared VPC example configuration
+- Terraform module structure
+- Git feature branches
+- Pull Request workflow
 - Terraform formatting
 - Terraform validation
-- Git feature branch workflow
-- GitHub repository setup
 
-Real GCP deployment is currently pending completion of billing and API activation for the lab project.
+Some real GCP deployment steps are pending billing, API availability, and external peer infrastructure.
 
 ---
 
@@ -468,39 +755,51 @@ Planned improvements include:
 
 - Production environment
 - Additional subnet segmentation
-- More restrictive firewall policies
-- Cloud DNS
-- VPC Flow Logs
-- Cloud NAT logging
-- HA VPN
-- BGP routing
-- Cloud Interconnect architecture
-- Shared VPC
-- Service projects
-- Network Connectivity Center
+- Hierarchical firewall policies
+- More granular firewall rules
+- VPC Service Controls
 - Private Service Connect
+- Network Connectivity Center
+- Cloud Interconnect design
+- Additional BGP route policies
+- Route advertisements
+- Route filtering
+- Multi-region Cloud Router design
+- DNS routing policies
+- DNS failover
 - Centralized logging
+- Cloud Monitoring dashboards
+- Terraform remote state
 - GitHub Actions CI/CD
 - Terraform security scanning
-- Open Policy Agent policy validation
-- Automated Terraform plan checks
+- Open Policy Agent
+- Automated policy validation
+- Python network troubleshooting tools
+- Automated route analysis
 - Architecture diagrams
-- Network troubleshooting automation using Python
 
 ---
 
 ## Skills Demonstrated
 
-This project demonstrates hands-on experience with:
+This project demonstrates practical experience with:
 
 - Google Cloud Platform
-- GCP VPC networking
+- GCP Networking
+- VPC design
 - Regional subnet design
 - CIDR planning
-- Firewall configuration
+- Firewall rules
 - Cloud Router
-- BGP concepts
 - Cloud NAT
+- VPC Flow Logs
+- Cloud DNS
+- Private DNS
+- HA VPN
+- BGP
+- Dynamic routing
+- Shared VPC
+- Hybrid connectivity
 - Terraform
 - Terraform modules
 - Infrastructure as Code
@@ -508,12 +807,22 @@ This project demonstrates hands-on experience with:
 - GitHub
 - Feature branch workflows
 - Pull Requests
-- Cloud network architecture
-- Network security
-- Infrastructure validation
+- Network troubleshooting
+- Cloud network observability
+- Enterprise network architecture
 
 ---
 
 ## Project Goal
 
-The long-term goal of this project is to evolve it into an enterprise-style GCP networking platform that demonstrates secure networking, hybrid connectivity, automation, policy enforcement, observability, and production-style Infrastructure as Code practices.
+The long-term goal of this project is to evolve it into a realistic enterprise GCP networking platform demonstrating:
+
+- Secure connectivity
+- Centralized network governance
+- Hybrid networking
+- Dynamic routing
+- Observability
+- Troubleshooting
+- Infrastructure automation
+- Policy enforcement
+- Production-style Infrastructure as Code practices
